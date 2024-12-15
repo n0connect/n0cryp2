@@ -1,10 +1,10 @@
 <p align="center">
   
 </p>
-<p align="center"><h1 align="center">n0crypt</h1></p>
+<p align="center"><h1 align="center">n0crypt2</h1></p>
 <p align="center">
 	<em><code>❯ It is a communication/messaging programme over Local Network on UNIX systems using C/C++, it is an experimental project.
-  n0crypt is a multi-client chat application that enables secure communication over TCP/IP protocol. The project allows users to send encrypted messages to each other and perform connection management through a central server.</code></em>
+  n0crypt2 is a multi-client chat application that enables secure communication over TCP/IP protocol. The project allows users to send encrypted messages to each other and perform connection management through a central server.</code></em>
 </p>
 <p align="center">
 	<!-- Shields.io badges disabled, using skill icons. --></p>
@@ -35,7 +35,7 @@
 
 ## 📍 Overview
 
-<code>❯ n0crypt provides encrypted messaging by enabling clients to connect to the server. While user authentication and logging are performed on the server side, each transaction on the client side is recorded in a detailed log file. Messages are protected with RSA and AES encryption algorithm. (No readable data was obtained when the packets were examined over the local network)</code>
+<code>❯ n0crypt2 provides encrypted messaging by enabling clients to connect to the server. While user authentication and logging are performed on the server side, each transaction on the client side is recorded in a detailed log file. Messages are protected with RSA and AES encryption algorithm. (No readable data was obtained when the packets were examined over the local network)</code>
 
 ---
 
@@ -51,7 +51,7 @@
 ## 📁 Project Structure
 
 ```sh
-└── n0crypt/
+└── n0crypt2/
     ├── LICENSE
     ├── Makefile
     ├── README.md
@@ -85,7 +85,7 @@
 
 ### 📂 Project Index
 <details closed>
-	<summary><b><code>n0crypt/</code></b></summary>
+	<summary><b><code>n0crypt2/</code></b></summary>
 	<details>
 		<summary><b>Makefile</b></summary>
 		<blockquote>
@@ -201,7 +201,7 @@
 
 ### ☑️ Prerequisites
 
-Before getting started with n0crypt, ensure your runtime environment meets the following requirements:
+Before getting started with n0crypt2, ensure your runtime environment meets the following requirements:
 
 - **C Compiler:** GCC or Clang is recommended.
 - **OpenSSL Library:** Required for RSA and AES encryption.
@@ -210,18 +210,18 @@ Before getting started with n0crypt, ensure your runtime environment meets the f
 
 ### ⚙️ Installation
 
-Install n0crypt using one of the following methods:
+Install n0crypt2 using one of the following methods:
 
 **Build from source:**
 
-1. Clone the n0crypt repository:
+1. Clone the n0crypt2 repository:
 ```sh
-❯ git clone https://github.com/n0connect/n0crypt
+❯ git clone https://github.com/n0connect/n0crypt2
 ```
 
 2. Navigate to the project directory:
 ```sh
-❯ cd n0crypt
+❯ cd n0crypt2
 ```
 
 3. Run requirements_debian.sh shell:
@@ -267,9 +267,9 @@ To test RSA encryption and connectivity, examine the client_log.log file. This f
 
 ## 🔰 Contributing
 The project is open source and open for contributions. You can contribute by following the steps below:
-- **💬 [Join the Discussions](https://github.com/n0connect/n0crypt/discussions)**
-- **🐛 [Report Issues](https://github.com/n0connect/n0crypt/issues)**
-- **💡 [Submit Pull Requests](https://github.com/n0connect/n0crypt/blob/main/CONTRIBUTING.md)**
+- **💬 [Join the Discussions](https://github.com/n0connect/n0crypt2/discussions)**
+- **🐛 [Report Issues](https://github.com/n0connect/n0crypt2/issues)**
+- **💡 [Submit Pull Requests](https://github.com/n0connect/n0crypt2/blob/main/CONTRIBUTING.md)**
 
 <details closed>
 <summary>Contributing Guidelines</summary>
@@ -277,7 +277,7 @@ The project is open source and open for contributions. You can contribute by fol
 1. **Fork the Repository**: Start by forking the project repository to your github account.
 2. **Clone Locally**: Clone the forked repository to your local machine using a git client.
    ```sh
-   git clone https://github.com/n0connect/n0crypt
+   git clone https://github.com/n0connect/n0crypt2
    ```
 3. **Create a New Branch**: Always work on a new branch, giving it a descriptive name.
    ```sh
@@ -300,8 +300,8 @@ The project is open source and open for contributions. You can contribute by fol
 <summary>Contributor Graph</summary>
 <br>
 <p align="left">
-   <a href="https://github.com{/n0connect/n0crypt/}graphs/contributors">
-      <img src="https://contrib.rocks/image?repo=n0connect/n0crypt">
+   <a href="https://github.com{/n0connect/n0crypt2/}graphs/contributors">
+      <img src="https://contrib.rocks/image?repo=n0connect/n0crypt2">
    </a>
 </p>
 </details>
