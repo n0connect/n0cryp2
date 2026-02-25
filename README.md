@@ -3,21 +3,22 @@
 </p>
 <p align="center"><h1 align="center">n0cryp2</h1></p>
 <p align="center">
-	<em><code>❯ It is a communication/messaging programme over Local Network on UNIX systems using C/C++, it is an experimental project.
-  n0cryp2 is a multi-client chat application that enables secure communication over TCP/IP protocol. The project allows users to send encrypted messages to each other and perform connection management through a central server.</code></em>
+	<em><code>❯ An end-to-end encrypted multi-client chat application over TCP/IP using C, built with TLS 1.3 and X25519/AES-256-GCM.
+  n0cryp2 enables secure communication where even the server cannot read messages. It is an experimental project for exploring modern cryptographic protocols on UNIX systems.</code></em>
 </p>
 <p align="center">
 	<!-- Shields.io badges disabled, using skill icons. --></p>
 <p align="center">Built with the tools and technologies:</p>
 <p align="center">
 	<a href="https://skillicons.dev">
-		<img src="https://skillicons.dev/icons?i=vscode,c,cpp,md,linux&theme=dark">
+		<img src="https://skillicons.dev/icons?i=vscode,c,md,linux&theme=dark">
 	</a></p>
 <br>
 
 ## 🔗 Table of Contents
 
 - [📍 Overview](#-overview)
+- [🔐 Security Architecture](#-security-architecture)
 - [👾 Features](#-features)
 - [🚀 Getting Started](#-getting-started)
   - [☑️ Prerequisites](#-prerequisites)
@@ -32,94 +33,120 @@
 
 ## 📍 Overview
 
-<code>❯ n0cryp2 provides encrypted messaging by enabling clients to connect to the server. While user authentication and logging are performed on the server side, each transaction on the client side is recorded in a detailed log file. Messages are protected with RSA encryption (OAEP padding). Network traffic is fully encrypted — no readable data was observed when packets were examined over the local network with Wireshark.</code>
+<code>❯ n0cryp2 is a multi-client chat application with two layers of encryption. TLS 1.3 secures the transport between clients and the server, while X25519 key exchange combined with AES-256-GCM provides true end-to-end encryption between clients. The server acts as a relay only — it cannot read any messages. Network traffic is fully encrypted; no readable data was observed when packets were examined with Wireshark.</code>
+
+---
+
+## 🔐 Security Architecture
+
+```
+Layer 1 — TLS 1.3 (Transport Security)
+  Client ←──TLS 1.3──→ Server ←──TLS 1.3──→ Client
+  • Protects against network eavesdropping
+  • Server authenticated via certificate
+
+Layer 2 — X25519 + AES-256-GCM (End-to-End)
+  Client A ←─────── E2E Encrypted ────────→ Client B
+  • Server is RELAY-ONLY, cannot read messages
+  • Each client generates X25519 keypair at login
+  • Pairwise shared secrets via ECDH + HKDF-SHA256
+  • Messages encrypted with AES-256-GCM (authenticated)
+```
+
+**Protocol Messages (binary, length-prefixed):**
+| Type | Direction | Purpose |
+|------|-----------|---------|
+| `0x01` LOGIN_REQ | C→S | Credentials (plaintext over TLS) |
+| `0x02` LOGIN_RES | S→C | Login result + assigned client ID |
+| `0x03` PUB_KEY | Both | X25519 public key announcement |
+| `0x04` KEY_LIST | S→C | All connected peers' public keys |
+| `0x05` E2E_MSG | Both | End-to-end encrypted message |
+| `0x06` CLIENT_LEFT | S→C | Peer disconnection notice |
 
 ---
 
 ## 👾 Features
+<code>❯ True end-to-end encryption — server cannot read messages</code><br>
+<code>❯ TLS 1.3 transport security with certificate authentication</code><br>
+<code>❯ X25519 ECDH key exchange + HKDF-SHA256 key derivation</code><br>
+<code>❯ AES-256-GCM authenticated encryption for messages</code><br>
 <code>❯ Multi-client support (up to 10 simultaneous clients)</code><br>
-<code>❯ Secure messaging with RSA 2048-bit encryption (PKCS1 OAEP)</code><br>
-<code>❯ Detailed logging on server (stdout) and client side (log file)</code><br>
-<code>❯ User authentication (predefined username and password)</code><br>
-<code>❯ Thread-safe connection management with pthreads</code><br>
-<code>❯ Cross-platform build support (Linux & macOS)</code><br>
+<code>❯ Thread-safe connection and peer key management</code><br>
+<code>❯ Detailed logging on server (stdout) and client (log file)</code><br>
+<code>❯ Cross-platform build (Linux & macOS)</code><br>
+<code>❯ Pure C implementation (C11)</code><br>
 
 ---
 ## 🚀 Getting Started
 
 ### ☑️ Prerequisites
 
-Before getting started with n0cryp2, ensure your runtime environment meets the following requirements:
-
-- **C/C++ Compiler:** `gcc` (C11) and `g++` (C++20) — GCC or Clang
-- **OpenSSL Library:** Required for RSA encryption (`libssl-dev` on Debian, `openssl` on Homebrew)
-- **GMP Library:** Required for large number operations (`libgmp-dev` on Debian, `gmp` on Homebrew)
+- **C Compiler:** `gcc` with C11 support
+- **OpenSSL 3.x:** Required for TLS 1.3, X25519, AES-GCM, HKDF
+  - Debian/Ubuntu: `sudo apt install libssl-dev`
+  - macOS: `brew install openssl`
 - **Operating System:** Linux (Ubuntu/Debian tested) or macOS
 
 
 ### ⚙️ Installation
 
-Install n0cryp2 using one of the following methods:
-
-**Build from source:**
-
-1. Clone the n0cryp2 repository:
+1. Clone the repository:
 ```sh
 ❯ git clone https://github.com/n0connect/n0cryp2
-```
-
-2. Navigate to the project directory:
-```sh
 ❯ cd n0cryp2
 ```
 
-3. Install dependencies and generate RSA keys:
+2. Install dependencies:
 ```sh
 # Debian/Ubuntu
 ❯ ./requirements_debian.sh
 
-# macOS (manual)
-❯ brew install openssl gmp
-❯ mkdir -p server-key
-❯ openssl genpkey -algorithm RSA -out server-key/private_key.pem -pkeyopt rsa_keygen_bits:2048
-❯ openssl pkey -in server-key/private_key.pem -pubout -out server-key/public_key.pem
+# macOS
+❯ brew install openssl
 ```
 
-4. Compile:
+3. Generate TLS certificates:
+```sh
+❯ make certs
+```
+
+4. Build:
 ```sh
 ❯ make all
 ```
 
 ### 🤖 Usage
-Start server with terminal:
+Start server:
 ```sh
 ❯ ./server
 ```
-Start client with terminal:
+Start client (in separate terminal):
 ```sh
 ❯ ./client
 ```
-Log in: User names and passwords are predefined (`database.c`):
+Log in with predefined credentials (`database.c`):
 ```sh
-❯ Username : n0n0
-❯ Password : n0n0
+❯ Username: n0n0
+❯ Password: n0n0
 ```
 
 ### 🧪 Testing
-To test RSA encryption and connectivity, examine the `client_log.log` file. This file holds transaction details for each client.
+1. Start the server and connect 2+ clients
+2. Send messages between clients
+3. Verify in server logs: messages show as **"ENCRYPTED"** — server cannot read content
+4. Check `client_log.log` for client-side transaction details
 
 ---
 ## 📌 Project Roadmap
 
-- [x] **`Task 1`**: ~~Multi-client connection support.~~
-- [x] **`Task 2`**: ~~User authentication system.~~
-- [x] **`Task 3`**: ~~RSA encryption integration.~~
-- [x] **`Task 4`**: ~~Comprehensive bug fix & code quality pass (69 fixes).~~
-- [ ] **`Task 5`**: Hybrid RSA+AES encryption (RSA for key exchange, AES for messages).
-- [ ] **`Task 6`**: OpenSSL EVP API migration (replace deprecated RSA functions).
-- [ ] **`Task 7`**: Password hashing and real database support.
-- [ ] **`Task 8`**: Qt cross-platform GUI based client application.
-- [ ] **`Task 9`**: Separate client/server key pairs for true end-to-end encryption.
+- [x] **`Task 1`**: ~~Multi-client connection support~~
+- [x] **`Task 2`**: ~~User authentication system~~
+- [x] **`Task 3`**: ~~TLS 1.3 transport encryption~~
+- [x] **`Task 4`**: ~~X25519 + AES-256-GCM end-to-end encryption~~
+- [x] **`Task 5`**: ~~Comprehensive bug fix & code quality pass (69 fixes)~~
+- [ ] **`Task 6`**: Password hashing and real database support
+- [ ] **`Task 7`**: Qt cross-platform GUI client
+- [ ] **`Task 8`**: Forward secrecy with ephemeral key rotation
 
       
 ---
@@ -132,6 +159,7 @@ This project is protected under the MIT licence. See the LICENSE file for more i
 
 ## 🙌 Acknowledgments
 
-- OpenSSL for RSA encryption.
+- [OpenSSL](https://www.openssl.org/) for TLS 1.3, X25519, AES-256-GCM, and HKDF
+- Inspired by modern E2E protocols (Signal, Noise Framework)
 
 ---
