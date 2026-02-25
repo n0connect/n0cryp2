@@ -8,14 +8,14 @@
  * @copyright Copyright (c) 2024
  *
  */
+/* (#38) iostream kaldırıldı — kullanılmıyordu */
 #include <cstring>
-#include <iostream>
 
 #include "colorcodes.h"
 #include "cryp2.h"
 #include "logmacro.h"
 
-// RSA açık anahtarı yükler
+/* RSA açık anahtarı yükler */
 RSA *load_public_key(const char *public_key_path) {
   FILE *pub_file = fopen(public_key_path, "r");
   if (!pub_file) {
@@ -29,7 +29,7 @@ RSA *load_public_key(const char *public_key_path) {
   return public_key;
 }
 
-// RSA özel anahtarı yükler
+/* RSA özel anahtarı yükler */
 RSA *load_private_key(const char *private_key_path) {
   FILE *priv_file = fopen(private_key_path, "r");
   if (!priv_file) {
@@ -44,12 +44,19 @@ RSA *load_private_key(const char *private_key_path) {
   return private_key;
 }
 
-// Hata mesajlarını yazdırır
+/* Hata mesajlarını yazdırır */
 void handle_openssl_error() {
   ERR_print_errors_fp(stderr);
   exit(EXIT_FAILURE);
 }
 
+/*
+ * (#40) NOT: OAEP padding ile 2048-bit RSA max 245 byte plaintext destekler.
+ *       BUFFER_SIZE(256) > 245 olduğundan uzun mesajlarda fail olur.
+ *       İleride hybrid RSA+AES yaklaşımına geçilmeli (#41).
+ *
+ * (#39) NOT: Her çağrıda dosyadan key yükleniyor — ileride cache'lenmeli.
+ */
 char *encrypt_message(const char *plaintext, const char *public_key_path) {
   RSA *public_key = load_public_key(public_key_path);
   int rsa_size = RSA_size(public_key);
@@ -61,14 +68,22 @@ char *encrypt_message(const char *plaintext, const char *public_key_path) {
     RSA_free(public_key);
     exit(EXIT_FAILURE);
   }
+
+  int plaintext_len = (int)strlen(plaintext) + 1; /* null dahil */
+  int max_payload = rsa_size - 42;                /* OAEP overhead for SHA-1 */
+  if (plaintext_len > max_payload) {
+    LOG_ERROR(rsa, "Plaintext too long for RSA (%d > %d)", plaintext_len,
+              max_payload);
+    RSA_free(public_key);
+    free(encrypted);
+    exit(EXIT_FAILURE);
+  }
+
   int result =
-      RSA_public_encrypt(strlen(plaintext) + 1, // Null karakteri de dahil et
-                         (unsigned char *)plaintext, (unsigned char *)encrypted,
-                         public_key, PADDING);
+      RSA_public_encrypt(plaintext_len, (unsigned char *)plaintext,
+                         (unsigned char *)encrypted, public_key, PADDING);
   RSA_free(public_key);
   if (result == -1) {
-    // K9 fix: handle_openssl_error() exit eder, sonraki kod unreachable idi —
-    // kaldırıldı
     free(encrypted);
     handle_openssl_error();
   }
@@ -99,6 +114,6 @@ char *decrypt_message(const char *encrypted_message, int encrypted_length,
     free(decrypted);
     handle_openssl_error();
   }
-  decrypted[result] = '\0'; // Null sonlandırma
+  decrypted[result] = '\0';
   return decrypted;
 }

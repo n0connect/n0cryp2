@@ -21,40 +21,39 @@
 #define PUBLIC_KEY getPublicKeyPath()
 #define PRIVATE_KEY getPrivateKeyPath()
 
-// Global değişken tanımları (header'da extern olarak declare edildi)
+/* Global değişken tanımları */
 struct AcceptedSocket *accepted_sockets = NULL;
 unsigned int accepted_sockets_count = 0;
-void *server_address_ptr = NULL;
 int global_client_id = 0;
 pthread_mutex_t id_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t accepted_sockets_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+/* (#42) interrupt handler için server_socket_fd global — doğru fd */
+static int g_server_socket_fd = -1;
+
 /**
  * @brief Handle the CTRL+C Signal
- *
- * @param sig <Signal type>
+ * (#43) Sadece async-signal-safe fonksiyonlar kullanılıyor
+ * (#42) server_address_ptr cast hatası giderildi
  */
 void interrupt_handler(int sig) {
-  (void)sig; // suppress unused parameter warning
-  int *fd = (int *)(server_address_ptr);
+  (void)sig;
+  /* async-signal-safe: write, shutdown, _exit */
+  const char msg[] = "\n[SIGNAL] Shutting down server...\n";
+  write(STDERR_FILENO, msg, sizeof(msg) - 1);
 
-  LOG_ERROR(server, "Signal: Kill Server.");
-  shutdown(*fd, SHUT_RDWR);
-  free(accepted_sockets);
-  free(server_address_ptr);
-  exit(EXIT_SUCCESS); // KILL THE PROGRAM
+  if (g_server_socket_fd >= 0) {
+    shutdown(g_server_socket_fd, SHUT_RDWR);
+    close(g_server_socket_fd);
+  }
+  _exit(EXIT_SUCCESS);
 }
 
 /**
  * @brief Bind server socket
- *
- * @param server_socket
- * @param server_address
  */
 void server_bind(int server_socket, struct sockaddr *server_address) {
-  // Bind the socket to our specified IP ad PORT
-  if (bind(server_socket, (struct sockaddr *)server_address,
-           sizeof(*server_address)) < 0) {
+  if (bind(server_socket, server_address, sizeof(struct sockaddr_in)) < 0) {
     shutdown(server_socket, SHUT_RDWR);
     free(server_address);
     LOG_ERROR(server, "Server bind error");
@@ -66,11 +65,8 @@ void server_bind(int server_socket, struct sockaddr *server_address) {
 
 /**
  * @brief Start Listen the current socket with a limit
- *
- * @param server_socket
  */
 void server_listen(int server_socket) {
-  // Listen the server socket
   if (listen(server_socket, QUEUE) < 0) {
     LOG_ERROR(server, "Listening error");
     exit(EXIT_FAILURE);
@@ -80,15 +76,11 @@ void server_listen(int server_socket) {
 }
 
 /**
- * @brief List socket allocate
- *
- * @param void
+ * @brief Allocate socket list
  */
 void socket_list_allocate() {
-  // Allocate memory blocks for the accepted socket's {0}
   accepted_sockets = (struct AcceptedSocket *)calloc(
       MAX_CLIENTS, sizeof(struct AcceptedSocket));
-
   if (accepted_sockets == NULL) {
     LOG_ERROR(server, "Socket List Allocate Error");
     exit(EXIT_FAILURE);
@@ -96,22 +88,17 @@ void socket_list_allocate() {
 }
 
 /**
- * @brief Generate random client number
- *
- * @return int
+ * @brief Generate unique client ID (thread-safe)
  */
 int generate_client_id() {
-  pthread_mutex_lock(&id_mutex); // Thread-safe with Mutex.
+  pthread_mutex_lock(&id_mutex);
   int new_id = global_client_id++;
   pthread_mutex_unlock(&id_mutex);
   return new_id;
 }
 
 /**
- * @brief Allocate and Accept client connection
- *
- * @param server_socket
- * @return struct AcceptedSocket*
+ * @brief Accept incoming client connection
  */
 struct AcceptedSocket *AcceptIncomingConnections(int server_socket) {
   struct sockaddr_in client_address;
@@ -136,7 +123,6 @@ struct AcceptedSocket *AcceptIncomingConnections(int server_socket) {
     accepted_return->error = client_socket;
     LOG_ERROR(server, "Accept error: %s", strerror(errno));
   } else {
-
     accepted_return->accepted_success = true;
     accepted_return->error = 0;
     LOG_SUCCESS(server, "Client connected successfully.");
@@ -145,54 +131,24 @@ struct AcceptedSocket *AcceptIncomingConnections(int server_socket) {
   return accepted_return;
 }
 
-/**
- * @brief Send client messages to other client's
- *
- * @param client_socket
- * @param buffer
- */
-void send_the_buffer_other_clients(int client_socket, char *buffer) {
-  pthread_mutex_lock(
-      &accepted_sockets_mutex); // Lock access to accepted_sockets
-  for (size_t i = 0; i < accepted_sockets_count; i++) {
-    // Skip the client that sent the message
-    if (accepted_sockets[i].accepted_socket_fd != client_socket) {
-      ssize_t send_result = send(accepted_sockets[i].accepted_socket_fd, buffer,
-                                 strlen(buffer), 0);
-
-      if (send_result < 0) {
-        LOG_ERROR(server, "Message send error (Client[%d]).",
-                  accepted_sockets[i].accepted_socket_fd % 11);
-      } else {
-        LOG_SUCCESS(server, "Message sent successfully. (Client[%d])",
-                    accepted_sockets[i].accepted_socket_fd % 11);
-      }
-    }
-  }
-  pthread_mutex_unlock(&accepted_sockets_mutex); // Unlock access after done
-}
+/* (#44) send_the_buffer_other_clients kaldırıldı — dead code, sadece secure_
+ * versiyonu var */
 
 /**
- * @brief Thread's working this function for the recv.
- *
- * @param arg
- * @return void*
+ * @brief Thread function for client handling
  */
 void *recv_the_client(void *arg) {
   struct AcceptedSocket *client_socket = (struct AcceptedSocket *)arg;
   int client_socket_fd = client_socket->accepted_socket_fd;
 
-  // Create Unique ThreadID
   int client_id = generate_client_id();
 
-  // Do the login
   if (!secure_handle_login(client_socket_fd, client_id)) {
     LOG_ERROR(server, "Client[%d] failed to login. Shutting down connection",
               client_id);
     close(client_socket_fd);
     free(client_socket);
 
-    // K2 fix: Client diziden silinmeli (dizide aranarak)
     pthread_mutex_lock(&accepted_sockets_mutex);
     for (size_t i = 0; i < accepted_sockets_count; i++) {
       if (accepted_sockets[i].accepted_socket_fd == client_socket_fd) {
@@ -204,41 +160,33 @@ void *recv_the_client(void *arg) {
       }
     }
     pthread_mutex_unlock(&accepted_sockets_mutex);
-
     return NULL;
   } else {
-    LOG_SUCCESS(server, "Receiveing messages and starting communication");
+    LOG_SUCCESS(server, "Receiving messages and starting communication");
   }
 
-  // Receive messages and start communication
   secure_handle_client_communication(client_socket_fd, client_id);
 
-  // Find and remove client from the accepted list
+  /* Remove client from list */
   pthread_mutex_lock(&accepted_sockets_mutex);
   for (size_t i = 0; i < accepted_sockets_count; i++) {
     if (accepted_sockets[i].accepted_socket_fd == client_socket_fd) {
       close(client_socket_fd);
-
-      // Shift the remaining clients down to fill the gap
       for (size_t j = i; j < accepted_sockets_count - 1; j++) {
         accepted_sockets[j] = accepted_sockets[j + 1];
       }
-
-      accepted_sockets_count--; // Update client count after removing
+      accepted_sockets_count--;
       break;
     }
   }
   pthread_mutex_unlock(&accepted_sockets_mutex);
 
-  free(client_socket); // Serbest bırakılacak doğru pointer
+  free(client_socket);
   return NULL;
 }
 
 /**
- * @brief Recv the Client's different thread's.
- *        Thread listen function: recv_the_client
- *
- * @param client_socket
+ * @brief Create thread for client
  */
 void recv_the_client_separate_threads(struct AcceptedSocket *client_socket) {
   pthread_t sthread_id;
@@ -246,68 +194,70 @@ void recv_the_client_separate_threads(struct AcceptedSocket *client_socket) {
   if (pthread_create(&sthread_id, NULL, recv_the_client, client_socket) != 0) {
     LOG_ERROR(server, "Failed to create client thread");
     free(client_socket);
-    interrupt_handler(-1);
     exit(EXIT_FAILURE);
   }
 
-  int detach_result = pthread_detach(sthread_id);
-  if (detach_result != 0) {
+  if (pthread_detach(sthread_id) != 0) {
     LOG_ERROR(server, "Failed to detach client thread");
-    interrupt_handler(-1);
     exit(EXIT_FAILURE);
   }
 
   LOG_INFO(server, "Thread created and detached successfully for client.");
-  return;
 }
 
 /**
- * @brief Server handle the Client first time.
- *
- * @param server_socket
+ * @brief Accept connections loop
  */
 void start_accept_connections(int server_socket) {
   while (true) {
-    if (accepted_sockets_count >= MAX_CLIENTS) {
+    /* (#45) mutex ile koruma — race condition giderildi */
+    pthread_mutex_lock(&accepted_sockets_mutex);
+    unsigned int current_count = accepted_sockets_count;
+    pthread_mutex_unlock(&accepted_sockets_mutex);
+
+    if (current_count >= MAX_CLIENTS) {
       LOG_ERROR(
           server,
           "Maximum number of clients reached. Rejecting new connections.");
-      sleep(1); // Add the shorttime sleep
+      sleep(1);
       continue;
     }
 
     struct AcceptedSocket *client_socket =
         AcceptIncomingConnections(server_socket);
 
-    if (client_socket->accepted_success) {
-      pthread_mutex_lock(&accepted_sockets_mutex); // Lock the array
-      if (accepted_sockets_count < MAX_CLIENTS) {
-        accepted_sockets[accepted_sockets_count++] = *client_socket;
-        pthread_mutex_unlock(&accepted_sockets_mutex); // Unlock the array
-        recv_the_client_separate_threads(client_socket);
-      } else {
-        pthread_mutex_unlock(
-            &accepted_sockets_mutex); // Unlock the array in case of max clients
-        shutdown(client_socket->accepted_socket_fd, SHUT_RDWR);
-        free(client_socket);
-      }
+    /* (#46) accept fail durumunda client_socket free ediliyor */
+    if (!client_socket->accepted_success) {
+      LOG_ERROR(server, "Incoming connection failed.");
+      free(client_socket);
+      continue;
+    }
+
+    pthread_mutex_lock(&accepted_sockets_mutex);
+    if (accepted_sockets_count < MAX_CLIENTS) {
+      accepted_sockets[accepted_sockets_count++] = *client_socket;
+      pthread_mutex_unlock(&accepted_sockets_mutex);
+      recv_the_client_separate_threads(client_socket);
+    } else {
+      pthread_mutex_unlock(&accepted_sockets_mutex);
+      shutdown(client_socket->accepted_socket_fd, SHUT_RDWR);
+      free(client_socket);
     }
   }
 }
 
 int main(int argc, char **argv) {
   (void)argc;
-  (void)argv; // suppress unused parameter warning
-  //.. Initiliaze the signal handler: CTRL+C
+  (void)argv;
+
   signal(SIGINT, interrupt_handler);
 
-  // Create the server socket
   int server_socket = createTCPIp4Socket();
+  g_server_socket_fd = server_socket; /* (#42) signal handler için */
 
-  // Define the server address
-  char *address = "127.0.0.1";
+  /* (#47) const char* kullanılıyor */
+  const char *address = "127.0.0.1";
   struct sockaddr_in *server_address = createIPv4Address(address, PORT);
-  server_address_ptr = (void *)server_address;
 
   server_bind(server_socket, (struct sockaddr *)server_address);
   server_listen(server_socket);
@@ -319,15 +269,9 @@ int main(int argc, char **argv) {
 }
 
 /**
- * @brief Secure login handler for clients
- *
- * @param client_socket_fd
- * @param sthread_id
- * @return true
- * @return false
+ * @brief Secure login handler
  */
 bool secure_handle_login(int client_socket_fd, int sthread_id) {
-
   LOG_INFO(server, "Secure Handle Login.");
   bool login_successful = false;
 
@@ -339,111 +283,108 @@ bool secure_handle_login(int client_socket_fd, int sthread_id) {
       LOG_ERROR(server, "Recv the data error. (%zd)", amount_received);
       return false;
     } else {
-      char *hex_ret = str_to_hex((const char *)(buffer), BUFFER_SIZE);
+      /* (#48) sadece amount_received kadar hex'e çevir */
+      char *hex_ret = str_to_hex(buffer, (size_t)amount_received);
       LOG_SUCCESS(server, "Succes Recv data. (%zd)", amount_received);
       LOG_SUCCESS(server, "Data (Hex): %s", hex_ret);
       free(hex_ret);
     }
 
+    /* (#49) RSA key leak giderildi — key ayrı yükleniyor ve free ediliyor */
     LOG_INFO(server, "Start Decrypt message.");
-    char *decrypted_msg = decrypt_message(
-        buffer, RSA_size(load_private_key(PRIVATE_KEY)), PRIVATE_KEY);
+    RSA *priv_key = load_private_key(PRIVATE_KEY);
+    int rsa_sz = RSA_size(priv_key);
+    RSA_free(priv_key);
+    char *decrypted_msg = decrypt_message(buffer, rsa_sz, PRIVATE_KEY);
     LOG_INFO(server, "Decrypted message: %s", decrypted_msg);
-    LOG_INFO(server, "Decrypted message lenght: %zu", strlen(decrypted_msg));
+    LOG_INFO(server, "Decrypted message length: %zu", strlen(decrypted_msg));
 
     strncpy(buffer, decrypted_msg, BUFFER_SIZE - 1);
-    buffer[BUFFER_SIZE - 1] = '\0'; // C5 fix: null-termination garantisi
-    free(decrypted_msg);            // K3 fix: memory leak
+    buffer[BUFFER_SIZE - 1] = '\0';
+    free(decrypted_msg);
     LOG_INFO(server, "Client[%d] sent login credentials: %s", sthread_id,
              buffer);
 
-    // buffer format: "username:password"
     char username[32];
     char password[64];
 
-    // G4 fix: sscanf format string'ine boyut sınırı eklendi
-    sscanf(buffer, "%31[^:]:%63[^\n]", username, password);
+    /* (#50) sscanf dönüş değeri kontrol ediliyor */
+    int parsed = sscanf(buffer, "%31[^:]:%63[^\n]", username, password);
+    if (parsed != 2) {
+      LOG_ERROR(server, "Failed to parse login credentials.");
+      const char *fail_message = "Invalid credential format";
+      char *secure_enc = encrypt_message(fail_message, PUBLIC_KEY);
+      send(client_socket_fd, secure_enc, BUFFER_SIZE, 0);
+      free(secure_enc);
+      continue;
+    }
 
     if (check_credentials(username, password)) {
-      // ADD HASH MATCH FEATURE
       const char *success_message = "Login:Successfully";
-
       char *secure_enc = encrypt_message(success_message, PUBLIC_KEY);
-      ssize_t send_amount =
-          send(client_socket_fd, secure_enc, BUFFER_SIZE, 0); // K6 fix: ssize_t
+      ssize_t send_amount = send(client_socket_fd, secure_enc, BUFFER_SIZE, 0);
 
       if (send_amount < 0) {
-        LOG_ERROR(server, "Login Succes but data cannot sending.");
+        LOG_ERROR(server, "Login success but data cannot sending.");
       } else {
-        LOG_SUCCESS(server, "Login Succes and data send the client.");
+        LOG_SUCCESS(server, "Login success and data sent to client.");
         LOG_INFO(server, "Data Size: [%zd]", send_amount);
       }
-      free(secure_enc); // K4 fix: memory leak
+      free(secure_enc);
       login_successful = true;
     } else {
       const char *fail_message = "Username or Password not correct, try again";
       char *secure_enc = encrypt_message(fail_message, PUBLIC_KEY);
-
-      ssize_t send_amount =
-          send(client_socket_fd, secure_enc, BUFFER_SIZE, 0); // K6 fix: ssize_t
+      ssize_t send_amount = send(client_socket_fd, secure_enc, BUFFER_SIZE, 0);
 
       if (send_amount < 0) {
-        LOG_ERROR(server, "Login Failed and data cannot sending.");
+        LOG_ERROR(server, "Login failed and data cannot sending.");
       } else {
-        LOG_INFO(server, "Login Failed and data send the client.");
+        LOG_INFO(server, "Login failed and data sent to client.");
         LOG_INFO(server, "Data Size: [%zd]", send_amount);
       }
-      free(secure_enc); // K4 fix: memory leak
+      free(secure_enc);
     }
   }
 
-  return true; // If login success.
+  return true;
 }
 
 /**
- * @brief (SERVER) Handle Client Communication.
- *
- * @param client_socket_fd
- * @param sthread_id
+ * @brief Handle client communication (encrypted)
  */
 void secure_handle_client_communication(int client_socket_fd, int sthread_id) {
-  //.. Alocate buffer for the bad luck: All client's send message same time
   char buffer[BUFFER_SIZE];
   while (true) {
-
     ssize_t amount_received = recv(client_socket_fd, buffer, BUFFER_SIZE, 0);
     if (amount_received <= 0) {
-      LOG_ERROR(server, "Failed to receive and share response's.");
-      return; // K7 fix: void fonksiyondan düzgün çıkış
+      LOG_ERROR(server, "Client disconnected or receive error.");
+      return;
     } else {
-      LOG_INFO(server, "Recieved Data Size: %zd", amount_received);
+      LOG_INFO(server, "Received Data Size: %zd", amount_received);
     }
 
-    char *decrypted_recv = decrypt_message(
-        buffer, RSA_size(load_private_key(PRIVATE_KEY)), PRIVATE_KEY);
+    /* (#51) RSA key leak giderildi */
+    RSA *priv_key = load_private_key(PRIVATE_KEY);
+    int rsa_sz = RSA_size(priv_key);
+    RSA_free(priv_key);
+    char *decrypted_recv = decrypt_message(buffer, rsa_sz, PRIVATE_KEY);
     LOG_SUCCESS(server, "Decrypted Buffer: %s", decrypted_recv);
-    LOG_SUCCESS(server, "Decrypted Buffer Lenght: %zu", strlen(decrypted_recv));
+    LOG_SUCCESS(server, "Decrypted Buffer Length: %zu", strlen(decrypted_recv));
     LOG_INFO(server, "Client[%d]: %s", sthread_id, decrypted_recv);
 
     free(decrypted_recv);
 
-    // Diğer istemcilere mesajı ilet
     secure_send_the_buffer_other_clients(client_socket_fd, buffer);
   }
 }
 
 /**
- * @brief Encrypted message sending other client's
- *
- * @param client_socket
- * @param buffer
+ * @brief Send encrypted buffer to other clients
  */
 void secure_send_the_buffer_other_clients(int client_socket, char *buffer) {
-
-  pthread_mutex_lock(
-      &accepted_sockets_mutex); // Lock access to accepted_sockets
+  pthread_mutex_lock(&accepted_sockets_mutex);
   for (size_t i = 0; i < accepted_sockets_count; i++) {
-    // Skip the client that sent the message
     if (accepted_sockets[i].accepted_socket_fd != client_socket) {
       ssize_t send_result =
           send(accepted_sockets[i].accepted_socket_fd, buffer, BUFFER_SIZE, 0);
@@ -457,7 +398,7 @@ void secure_send_the_buffer_other_clients(int client_socket, char *buffer) {
       }
     }
   }
-  pthread_mutex_unlock(&accepted_sockets_mutex); // Unlock access after done
+  pthread_mutex_unlock(&accepted_sockets_mutex);
 }
 
 // TCP_SERVER

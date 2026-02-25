@@ -14,8 +14,8 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <string.h>
-#include <sys/ioctl.h> // for the 'ioctl' function
-#include <unistd.h>    // for the 'isatty' function
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #include "tcpclient.h"
 
@@ -23,7 +23,7 @@
 #define PRIVATE_KEY getPrivateKeyPath()
 #define MAX_CHAR_LIMIT 256
 
-// B4 fix: address definition'ı burada (header'da extern declaration)
+/* B4: address definition */
 const char *address = "127.0.0.1";
 
 char *username_ptr = NULL;
@@ -38,11 +38,11 @@ void newline_messagebox() {
   } else {
     LOG_MSG("unknown", online);
   }
-  fflush(stdout); // Clear output buffer
+  fflush(stdout);
 }
 
 /**
- * @brief Adds a newline and logs the current user's online status.
+ * @brief Logs the current user's online status.
  */
 void messagebox() {
   if (username_ptr) {
@@ -50,43 +50,43 @@ void messagebox() {
   } else {
     LOG_MSG("unknown", online);
   }
-  fflush(stdout); // Clear output buffer
+  fflush(stdout);
 }
 
 /**
  * @brief Get the width of the terminal.
- *
- * @return int Terminal width or a default value (80)
  */
 int get_terminal_width() {
-  struct winsize ws; // Window size
+  struct winsize ws;
   if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != -1) {
     return ws.ws_col;
   }
-  return 80; // Default width
+  return 80;
 }
 
 /**
  * @brief Get the height of the terminal.
- *
- * @return int Terminal height or a default value (20)
  */
 int get_terminal_height() {
-  struct winsize ws; // Window size
+  struct winsize ws;
   if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != -1) {
     return ws.ws_row;
   }
-  return 20; // Default height
+  return 20;
 }
 
 /**
- * @brief Create new thread for the listen another client messages.
- *
- * @param network_socket
+ * @brief Create new thread for listening to messages.
  */
 void start_listening_messages_new_thread(int network_socket) {
   pthread_t thread_id;
+
+  /* (#52) malloc NULL kontrolü eklendi */
   int *socket_copy = (int *)malloc(sizeof(int));
+  if (socket_copy == NULL) {
+    LOG_ERROR(client, "Failed to allocate memory for socket copy");
+    exit(EXIT_FAILURE);
+  }
   *socket_copy = network_socket;
 
   int thread_result = pthread_create(
@@ -94,23 +94,18 @@ void start_listening_messages_new_thread(int network_socket) {
 
   if (thread_result != 0) {
     LOG_ERROR(client, "Failed to create thread");
+    free(socket_copy);
     exit(EXIT_FAILURE);
   }
   pthread_detach(thread_id);
 }
 
 /**
- * @brief Server connect the spesified adress
- *
- * @param network_socket
- * @param server_address
- * @return true
- * @return false
+ * @brief Connect to server address
+ * (#53) sizeof(struct sockaddr_in) kullanılıyor
  */
 bool connect_the_adress(int network_socket, struct sockaddr *server_address) {
-  size_t server_size = sizeof(*server_address);
-
-  if (connect(network_socket, server_address, server_size) < 0) {
+  if (connect(network_socket, server_address, sizeof(struct sockaddr_in)) < 0) {
     LOG_ERROR(client, "Connection error.");
     shutdown(network_socket, SHUT_RDWR);
     free(server_address);
@@ -122,17 +117,14 @@ bool connect_the_adress(int network_socket, struct sockaddr *server_address) {
 }
 
 /**
- * @brief Get the username object
- *
- * @return char*
+ * @brief Get the username
  */
 char *get_username() {
   char *username = NULL;
   size_t username_size = 0;
 
   if (username_ptr == NULL) {
-    username_ptr =
-        (char *)malloc(32 * sizeof(char)); // Daha güvenli bellek ayırma
+    username_ptr = (char *)malloc(32 * sizeof(char));
     if (username_ptr == NULL) {
       LOG_ERROR(client, "Failed to allocate memory for username_ptr");
       exit(EXIT_FAILURE);
@@ -140,66 +132,71 @@ char *get_username() {
   }
 
   while (true) {
-    fprintf(stdout, BCYN "  - Please enter your username: ");
+    /* (#54) RESET eklendi — color bleed giderildi */
+    fprintf(stdout, BCYN "  - Please enter your username: " RESET);
+    fflush(stdout);
     getline(&username, &username_size, stdin);
     if (username == NULL) {
       LOG_ERROR(client, "Failed to read username");
       exit(EXIT_FAILURE);
     }
-    // Yeni satırı kaldır
     username[strcspn(username, "\n")] = '\0';
-    if (strlen(username) > 3 && strlen(username) <= 32) {
+    if (strlen(username) > 3 && strlen(username) <= 31) {
       strncpy(username_ptr, username, 31);
-      username_ptr[31] = '\0'; // C5 fix: null termination
-
-      free(username); // Bellek serbest bırakılır
+      username_ptr[31] = '\0';
+      free(username);
       break;
     } else {
-      LOG_ERROR(client, "Username must be between 4 and 32 characters");
+      LOG_ERROR(client, "Username must be between 4 and 31 characters");
       sleep(3);
       free(username);
-      username = NULL; // getline için reset
+      username = NULL;
       username_size = 0;
-      // G5 fix: system("clear") yerine ANSI escape sequence
       fprintf(stdout, "\033[2J\033[H");
       fflush(stdout);
     }
   }
 
-  // G5 fix: system("clear") yerine ANSI escape sequence
   fprintf(stdout, "\033[2J\033[H");
   fflush(stdout);
   return username_ptr;
 }
 
 /**
- * @brief Get the password object
- *
- * @return char*
+ * @brief Get the password
+ * (#55) newline stripping burada yapılıyor, strlen kontrolü düzeltildi
  */
 char *get_password() {
   char *password = NULL;
   size_t password_size = 0;
 
   while (true) {
-    fprintf(stdout, BCYN "  - Please enter your password: ");
+    /* (#54) RESET eklendi */
+    fprintf(stdout, BCYN "  - Please enter your password: " RESET);
+    fflush(stdout);
     getline(&password, &password_size, stdin);
+    if (password == NULL) {
+      LOG_ERROR(client, "Failed to read password");
+      exit(EXIT_FAILURE);
+    }
 
-    if (strlen(password) >= 3 && strlen(password) <= 64) {
+    /* (#55) Newline'ı burada kaldır, sonra uzunluk ölç */
+    password[strcspn(password, "\n")] = '\0';
+    size_t pw_len = strlen(password);
+
+    if (pw_len >= 3 && pw_len <= 64) {
       break;
     } else {
-      LOG_ERROR(client, "Password must be the min 4 and max 64 characters");
+      LOG_ERROR(client, "Password must be between 3 and 64 characters");
       sleep(3);
       free(password);
-      password = NULL; // getline için reset
+      password = NULL;
       password_size = 0;
-      // G5 fix: system("clear") yerine ANSI escape sequence
       fprintf(stdout, "\033[2J\033[H");
       fflush(stdout);
     }
   }
 
-  // G5 fix: system("clear") yerine ANSI escape sequence
   fprintf(stdout, "\033[2J\033[H");
   fflush(stdout);
   return password;
@@ -207,11 +204,6 @@ char *get_password() {
 
 /**
  * @brief Send buffer to network socket
- *
- * @param network_socket
- * @param buffer
- * @return true
- * @return false
  */
 bool send_the_buffer(int network_socket, char *buffer) {
   if (buffer == NULL || strlen(buffer) == 0) {
@@ -230,14 +222,10 @@ bool send_the_buffer(int network_socket, char *buffer) {
 
 /**
  * @brief Send encrypted buffer to network socket
- *
- * @param network_socket
- * @param buffer
- * @return true
- * @return false
+ * (#56) strlen kontrolü kaldırıldı — ciphertext'te NULL byte olabilir
  */
 bool send_secure(int network_socket, const char *buffer) {
-  if (buffer == NULL || strlen(buffer) == 0) {
+  if (buffer == NULL) {
     LOG_ERROR(client, "Invalid buffer.");
     return false;
   }
@@ -253,7 +241,6 @@ bool send_secure(int network_socket, const char *buffer) {
 }
 
 int main() {
-
   int network_socket = createTCPIp4Socket();
   struct sockaddr_in *server_address = createIPv4Address(address, PORT);
   bool connection_status =
@@ -274,13 +261,10 @@ int main() {
 }
 
 /**
- * @brief RSA and AES using for the between client-server LOGIN communicitation.
- *
- * @param network_socket
- * @param server_address
+ * @brief Encrypted user login
  */
 void encryped_user_login(int network_socket, struct sockaddr *server_address) {
-  (void)server_address; // suppress unused parameter warning
+  (void)server_address;
 
   bool login_successful = false;
 
@@ -290,14 +274,15 @@ void encryped_user_login(int network_socket, struct sockaddr *server_address) {
     char secure_recv[BUFFER_SIZE];
 
     username = get_username();
-    username[strcspn(username, "\n")] = '\0';
+    /* (#57) username zaten get_username()'de trim edildi — gereksiz strcspn
+     * kaldırıldı */
     password = get_password();
-    password[strcspn(password, "\n")] = '\0';
+    /* (#55) password artık get_password()'da trim ediliyor — burada da gereksiz
+     */
 
     int sn_ret = snprintf(buffer, sizeof(buffer), "%s:%s", username, password);
     if (sn_ret < 0 || (size_t)sn_ret >= sizeof(buffer)) {
       LOG_ERROR(client, "Buffer overflow in user login.");
-      // K5 fix: username artık username_ptr'ı gösteriyor, free etmemeliyiz
       free(password);
       exit(EXIT_FAILURE);
     }
@@ -310,19 +295,21 @@ void encryped_user_login(int network_socket, struct sockaddr *server_address) {
     } else {
       char *hex_ret = str_to_hex(secure_enc, BUFFER_SIZE);
       LOG_SUCCESS(client, "Encrypted message       : %s", hex_ret);
-      LOG_SUCCESS(client, "Encrypted message lenght: %zu", strlen(secure_enc));
-      free(hex_ret); // K5 fix: memory leak
+      LOG_SUCCESS(client, "Encrypted message length: %zu", strlen(secure_enc));
+      free(hex_ret);
     }
 
+    /* (#58) Double free giderildi — hata dalında free yok, sadece sonda */
     if (send(network_socket, secure_enc, BUFFER_SIZE, 0) < 0) {
       LOG_ERROR(client, "Failed to send encrypted login data.");
-      free(secure_enc); // K5 fix: memory leak
+      free(secure_enc);
       free(password);
       exit(EXIT_FAILURE);
     } else {
-      LOG_SUCCESS(client, "Succes send encrypted login data");
+      LOG_SUCCESS(client, "Success send encrypted login data");
     }
-    free(secure_enc); // K5 fix: memory leak
+    free(secure_enc);
+    secure_enc = NULL; /* dangling pointer koruması */
 
     LOG_SUCCESS(client, "Recv the data from server");
     ssize_t amount_received = recv(network_socket, secure_recv, BUFFER_SIZE, 0);
@@ -331,18 +318,20 @@ void encryped_user_login(int network_socket, struct sockaddr *server_address) {
       free(password);
       exit(EXIT_FAILURE);
     } else {
-      char *hex_ret = str_to_hex(secure_recv, BUFFER_SIZE);
-      LOG_SUCCESS(client, "Recieved Data Size  : %zd", amount_received);
-      LOG_SUCCESS(client, "Secure Buffer (hex) : %s", (const char *)hex_ret);
-      LOG_SUCCESS(client, "Secure Buffer Lenght: %zu", strlen(secure_recv));
-      free(hex_ret); // K5 fix: memory leak
+      char *hex_ret = str_to_hex(secure_recv, (size_t)amount_received);
+      LOG_SUCCESS(client, "Received Data Size  : %zd", amount_received);
+      LOG_SUCCESS(client, "Secure Buffer (hex) : %s", hex_ret);
+      free(hex_ret);
     }
 
-    char *decrypted_recv = decrypt_message(
-        secure_recv, RSA_size(load_private_key(PRIVATE_KEY)), PRIVATE_KEY);
+    /* (#59) RSA key leak giderildi */
+    RSA *priv_key = load_private_key(PRIVATE_KEY);
+    int rsa_sz = RSA_size(priv_key);
+    RSA_free(priv_key);
+    char *decrypted_recv = decrypt_message(secure_recv, rsa_sz, PRIVATE_KEY);
 
     LOG_SUCCESS(client, "Decrypted Buffer       : %s", decrypted_recv);
-    LOG_SUCCESS(client, "Decrypted Buffer Lenght: %zu", strlen(decrypted_recv));
+    LOG_SUCCESS(client, "Decrypted Buffer Length: %zu", strlen(decrypted_recv));
 
     const char *success_message = "Login:Successfully";
     if (strncmp(decrypted_recv, success_message, strlen(success_message)) ==
@@ -352,28 +341,24 @@ void encryped_user_login(int network_socket, struct sockaddr *server_address) {
     } else {
       LOG_INFO(client, "Login failed: %s", decrypted_recv);
     }
-    free(decrypted_recv); // K5 fix: memory leak
-    free(password);       // K5 fix: memory leak
+    free(decrypted_recv);
+    free(password);
   }
 }
 
 /**
- * @brief Non Real-time controlled input and message sending to the server.
- *
- * @param network_socket The client's network socket.
- * @param server_address Pointer to the server's address structure.
- * @param username The client's username.
+ * @brief Send messages to server (user input loop)
  */
 void secure_user_send_message(int network_socket,
                               struct sockaddr *server_address, char *username) {
-  (void)server_address;           // suppress unused parameter warning
-  char *terminal_line = NULL;     // Kullanıcı girişini tutar
-  size_t terminal_line_size = 0;  // Giriş boyutunu tutar
-  char stack_buffer[BUFFER_SIZE]; // Mesaj tamponu
+  (void)server_address;
+  char *terminal_line = NULL;
+  size_t terminal_line_size = 0;
+  char stack_buffer[BUFFER_SIZE];
   bool max_length_err = false;
   unsigned int err_count = 0;
 
-  newline_messagebox(); // Mesaj kutusunu başlat
+  newline_messagebox();
 
   while (true) {
     if (terminal_line != NULL) {
@@ -382,7 +367,7 @@ void secure_user_send_message(int network_socket,
     terminal_line = NULL;
     terminal_line_size = 0;
 
-    printf("\033[s"); // Cursor pozisyonunu kaydet
+    printf("\033[s");
     ssize_t return_char_count =
         getline(&terminal_line, &terminal_line_size, stdin);
 
@@ -391,34 +376,34 @@ void secure_user_send_message(int network_socket,
       err_count++;
       continue;
     } else if (return_char_count == 1 && terminal_line[0] == '\n') {
-      printf("\033[K"); // Satırı temizle
-      printf("\033[u"); // Cursor pozisyonunu eski haline getir
-      printf("\033[K"); // Satırı temizle
+      printf("\033[K");
+      printf("\033[u");
+      printf("\033[K");
       printf("\r");
       messagebox();
       fflush(stdout);
       continue;
     }
 
-    if ((size_t)256 < strlen(terminal_line)) {
+    /* (#60) MAX_CHAR_LIMIT makrosu kullanılıyor */
+    if ((size_t)MAX_CHAR_LIMIT < strlen(terminal_line)) {
       max_length_err = true;
-      printf("\033[s"); // Cursor pozisyonunu kaydet
+      printf("\033[s");
       int terminal_height = get_terminal_height();
-      printf("\033[%d;1H", terminal_height); // En alt satıra git
+      printf("\033[%d;1H", terminal_height);
       printf(RESET BLKHB HWHT
-             "Error: Max character size is 256 (Current: %zu)" RESET,
-             strlen(terminal_line));
-      printf("\033[u"); // Cursor pozisyonunu eski haline getir
+             "Error: Max character size is %d (Current: %zu)" RESET,
+             MAX_CHAR_LIMIT, strlen(terminal_line));
+      printf("\033[u");
       fflush(stdout);
       continue;
     } else if (max_length_err) {
-      // Hata mesajını temizle
       max_length_err = false;
-      printf("\033[s"); // Cursor pozisyonunu kaydet
+      printf("\033[s");
       int terminal_height = get_terminal_height();
-      printf("\033[%d;1H", terminal_height); // En alt satıra git
-      printf("\033[K");                      // Satırı temizle
-      printf("\033[u"); // Cursor pozisyonunu eski haline getir
+      printf("\033[%d;1H", terminal_height);
+      printf("\033[K");
+      printf("\033[u");
       fflush(stdout);
     }
 
@@ -431,42 +416,36 @@ void secure_user_send_message(int network_socket,
     snprintf(stack_buffer, sizeof(stack_buffer), "%s: %s", username,
              terminal_line);
 
-    // Şifreleme ve mesaj gönderme
     char *return_encryption = encrypt_message(stack_buffer, PUBLIC_KEY);
     if (!return_encryption) {
       LOG_ERROR(client, "Encryption failed.");
       exit(EXIT_FAILURE);
     } else {
-      LOG_SUCCESS(client, "Encrypted message length: %zu",
-                  strlen(return_encryption));
+      LOG_SUCCESS(client, "Encrypted message length: %d", BUFFER_SIZE);
     }
 
-    // C3 fix: send_secure true(1) döner başarıda, false(0) hatada
     if (send_secure(network_socket, return_encryption)) {
       LOG_SUCCESS(client, "Encrypted message sent to server successfully.");
     }
     free(return_encryption);
   }
-  // terminal_line son kez free et
+
   if (terminal_line != NULL) {
     free(terminal_line);
   }
 }
 
 /**
- * @brief (CLIENT)Threads working on this function for the client-server-client
- * com.
- *
- * @param arg
- * @return void*
+ * @brief Listen for incoming messages from server (thread)
  */
 void *secure_listening_messages_thread(void *arg) {
   int network_socket = *(int *)arg;
-  free(arg); // Soket kopyasını serbest bırak
-  char buffer[BUFFER_SIZE * MAX_CLIENTS];
+  free(arg);
 
-  int terminal_width =
-      get_terminal_width(); // Terminal genişliğini dinamik olarak al
+  /* (#61) buffer boyutu sadece BUFFER_SIZE — gereksiz büyük alloc giderildi */
+  char buffer[BUFFER_SIZE];
+
+  int terminal_width = get_terminal_width();
   size_t half_terminal_width = (size_t)terminal_width / 2;
 
   while (true) {
@@ -477,29 +456,49 @@ void *secure_listening_messages_thread(void *arg) {
       } else {
         LOG_ERROR(client, "Message receive error");
       }
-      break; // Hata durumunda döngüden çık
+      break;
     }
 
-    // DEC START
     LOG_INFO(client, "Decryption is start");
-    char *decrypted_buffer = decrypt_message(
-        buffer, RSA_size(load_private_key(PRIVATE_KEY)), PRIVATE_KEY);
-    // K8 fix: decrypted veriyi buffer'a kopyala ve doğru null-terminate et
+
+    /* (#62) RSA key leak giderildi */
+    RSA *priv_key = load_private_key(PRIVATE_KEY);
+    int rsa_sz = RSA_size(priv_key);
+    RSA_free(priv_key);
+    char *decrypted_buffer = decrypt_message(buffer, rsa_sz, PRIVATE_KEY);
+
     strncpy(buffer, decrypted_buffer, BUFFER_SIZE - 1);
     buffer[BUFFER_SIZE - 1] = '\0';
     LOG_INFO(client, "Decrypted Buffer: %s", decrypted_buffer);
-    LOG_INFO(client, "Decrypted Buffer Lenght: %zu", strlen(decrypted_buffer));
-    free(decrypted_buffer); // C4 fix: memory leak
-    // DEC END
+    LOG_INFO(client, "Decrypted Buffer Length: %zu", strlen(decrypted_buffer));
+    free(decrypted_buffer);
 
     size_t message_length = strlen(buffer);
 
     char temp_username[32];
     char temp_buffer[1024];
-    sscanf(buffer, "%31[^:]:%1023[^\n]", temp_username, temp_buffer);
+
+    /* (#63) sscanf dönüş değeri kontrol ediliyor */
+    int parsed =
+        sscanf(buffer, "%31[^:]:%1023[^\n]", temp_username, temp_buffer);
+    if (parsed < 2) {
+      /* Mesaj formatı beklenen değilse doğrudan yazdır */
+      fprintf(stdout, "\r" BCYN "%s" RESET "\n", buffer);
+      fflush(stdout);
+      newline_messagebox();
+      continue;
+    }
+
     size_t username_len = strlen(temp_username);
-    message_length -= username_len;
-    fprintf(stdout, "\r"); // Satırı başa döndür
+
+    /* (#64) unsigned underflow koruması */
+    if (message_length > username_len) {
+      message_length -= username_len;
+    } else {
+      message_length = 0;
+    }
+
+    fprintf(stdout, "\r");
 
     if (half_terminal_width < message_length) {
       size_t start_index = 0;
@@ -517,10 +516,11 @@ void *secure_listening_messages_thread(void *arg) {
         start_index += line_length;
       }
     } else {
-      fprintf(stdout, BCYN "%*s%s\n", (int)half_terminal_width, "", buffer);
+      fprintf(stdout, BCYN "%*s%s" RESET "\n", (int)half_terminal_width, "",
+              buffer);
     }
     fflush(stdout);
-    newline_messagebox(); // Mesaj yazdırma işleminden sonra çağrılır
+    newline_messagebox();
   }
 
   return NULL;

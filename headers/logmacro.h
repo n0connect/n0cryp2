@@ -7,20 +7,17 @@
 #include <string.h>
 #include <time.h>
 
-#define online 1
-#define offline 0
+/* (#6) online/offline yerine büyük harfli enum değerleri */
+typedef enum { LOG_STATUS_ONLINE = 1, LOG_STATUS_OFFLINE = 0 } LogStatus;
 
-// Log bağlamlarını temsil eden enum
-typedef enum {
-  server,
-  client,
-  auth,
-  database,
-  rsa,
-  unknown // Varsayılan için
-} LogContext;
+/* Eski uyumluluk makroları — kademeli geçiş için */
+#define online LOG_STATUS_ONLINE
+#define offline LOG_STATUS_OFFLINE
 
-// Bağlamı string'e dönüştüren yardımcı makro
+/* Log bağlamlarını temsil eden enum */
+typedef enum { server, client, auth, database, rsa, unknown } LogContext;
+
+/* Bağlamı string'e dönüştüren yardımcı makro */
 #define CONTEXT_TO_STRING(context)                                             \
   (context == server     ? "SERVER"                                            \
    : context == client   ? "CLIENT"                                            \
@@ -29,39 +26,42 @@ typedef enum {
    : context == rsa      ? "RSA"                                               \
                          : "UNKNOWN")
 
-// C1 fix: Thread-safe timestamp — her çağrıda caller-provided buffer kullanır
+/* (#7) Thread-safe timestamp — caller-provided buffer */
 static inline const char *get_timestamp_safe(char *buf, size_t buf_size) {
   time_t now = time(NULL);
   struct tm t;
-  localtime_r(&now, &t); // thread-safe localtime
+  localtime_r(&now, &t);
   strftime(buf, buf_size, "%Y-%m-%d %H:%M:%S", &t);
   return buf;
 }
 
-// Uyumluluk için eski API — tek thread'li bağlamlarda kullanılabilir
+/* (#7) Eski API — makrolar artık get_timestamp_r kullanıyor ama uyumluluk için
+ */
 static inline char *get_timestamp() {
   static char buffer[32];
   get_timestamp_safe(buffer, sizeof(buffer));
   return buffer;
 }
 
-// Log dosyasını aç (sabit isimde dosya)
+/* (#8) Log dosyasını aç (her çağrıda fopen/fclose — bilinen performans sorunu)
+ */
 static inline FILE *get_log_file() { return fopen("client_log.log", "a"); }
 
-// Log bilgi makrosu
+/* Log loop info makrosu */
 #define LOG_LOOPINFO(context, fmt, ...)                                        \
   fprintf(stdout, RESET BWHT "[LOG][%s][INFO] " YEL fmt RESET "\n",            \
           CONTEXT_TO_STRING(context), ##__VA_ARGS__)
 
-// Log bilgi makrosu
-// Log bilgi makrosu
+/* (#10) LOG_MSG artık do/while ile sarılı — dangling else riski giderildi */
 #define LOG_MSG(client_name, status)                                           \
-  fprintf(stdout,                                                              \
-          RESET BWHT "[%s][%s]: ", (status == online ? "ONLINE" : "OFFLINE"),  \
-          client_name);                                                        \
-  fflush(stdout)
+  do {                                                                         \
+    fprintf(stdout, RESET BWHT "[%s][%s]: ",                                   \
+            (status == LOG_STATUS_ONLINE ? "ONLINE" : "OFFLINE"),              \
+            client_name);                                                      \
+    fflush(stdout);                                                            \
+  } while (0)
 
-// Log başarı makrosu
+/* Log başarı makrosu */
 #define LOG_SUCCESS(context, fmt, ...)                                         \
   do {                                                                         \
     if (context != server) {                                                   \
@@ -82,7 +82,7 @@ static inline FILE *get_log_file() { return fopen("client_log.log", "a"); }
     }                                                                          \
   } while (0)
 
-// Log bilgi makrosu
+/* Log bilgi makrosu */
 #define LOG_INFO(context, fmt, ...)                                            \
   do {                                                                         \
     if (context != server) {                                                   \
@@ -102,17 +102,12 @@ static inline FILE *get_log_file() { return fopen("client_log.log", "a"); }
     }                                                                          \
   } while (0)
 
-// Log hata makrosu
+/* (#11) Log hata makrosu — errno kontrolü kaldırıldı (güvenilir değil) */
 #define LOG_ERROR(context, fmt, ...)                                           \
   do {                                                                         \
     if (context != server) {                                                   \
       FILE *log_file = get_log_file();                                         \
-      if (errno && log_file) {                                                 \
-        fprintf(log_file, "[%s] [LOG][%s][ERROR] " fmt ": %s\n",               \
-                get_timestamp(), CONTEXT_TO_STRING(context), ##__VA_ARGS__,    \
-                strerror(errno));                                              \
-        fclose(log_file);                                                      \
-      } else if (log_file) {                                                   \
+      if (log_file) {                                                          \
         fprintf(log_file, "[%s] [LOG][%s][ERROR] " fmt "\n", get_timestamp(),  \
                 CONTEXT_TO_STRING(context), ##__VA_ARGS__);                    \
         fclose(log_file);                                                      \
@@ -122,17 +117,9 @@ static inline FILE *get_log_file() { return fopen("client_log.log", "a"); }
                 get_timestamp(), CONTEXT_TO_STRING(context));                  \
       }                                                                        \
     } else {                                                                   \
-      if (errno) {                                                             \
-        fprintf(stderr,                                                        \
-                RESET BWHT "[%s] [LOG][%s][ERROR] " BRED fmt ": %s\n" RESET,   \
-                get_timestamp(), CONTEXT_TO_STRING(context), ##__VA_ARGS__,    \
-                strerror(errno));                                              \
-      } else {                                                                 \
-        fprintf(stderr,                                                        \
-                RESET BWHT "[%s] [LOG][%s][ERROR] " BRED fmt "\n" RESET,       \
-                get_timestamp(), CONTEXT_TO_STRING(context), ##__VA_ARGS__);   \
-      }                                                                        \
+      fprintf(stderr, RESET BWHT "[%s] [LOG][%s][ERROR] " BRED fmt "\n" RESET, \
+              get_timestamp(), CONTEXT_TO_STRING(context), ##__VA_ARGS__);     \
     }                                                                          \
   } while (0)
 
-#endif // LOGMACRO_H
+#endif /* LOGMACRO_H */
