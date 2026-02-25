@@ -1,0 +1,29 @@
+# Build outputs
+/build/
+/server
+/client
+
+# Object files
+*.o
+*.obj
+
+# Debug files
+*.dSYM/
+
+# Log files
+*.log
+client_log.log
+
+# RSA keys (sensitive!)
+/server-key/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
