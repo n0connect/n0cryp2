@@ -9,20 +9,22 @@
 // Çalışma dizinine göre dinamik olarak dosya yolunu oluştur
 const char* getPublicKeyPath() {
     static char path[PATH_MAX];
-    if (getcwd(path, sizeof(path)) == NULL) {
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
         perror("getcwd() error");
         exit(EXIT_FAILURE);
     }
-    strcat(path, "/server-key/public_key.pem");
+    snprintf(path, sizeof(path), "%s/server-key/public_key.pem", cwd);
     return path;
 }
 
 const char* getPrivateKeyPath() {
     static char path[PATH_MAX];
-    if (getcwd(path, sizeof(path)) == NULL) {
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
         perror("getcwd() error");
         exit(EXIT_FAILURE);
     }
-    strcat(path, "/server-key/private_key.pem");
+    snprintf(path, sizeof(path), "%s/server-key/private_key.pem", cwd);
     return path;
 }

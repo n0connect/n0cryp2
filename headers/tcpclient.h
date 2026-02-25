@@ -1,20 +1,21 @@
 #ifndef TCPCLIENT_H
 #define TCPCLIENT_H
 
-//includes
-#include "socketutil.h"
-#include "colorcodes.h"
-#include "logmacro.h"
+// includes
 #include "clientkey.h"
-#include "strtohex.h"
+#include "colorcodes.h"
 #include "cryp2.h"
+#include "logmacro.h"
+#include "socketutil.h"
+#include "strtohex.h"
 
 #define PORT 2000
 #define MAX_CLIENTS 10 // Max 10 Client
 #define MAX_SEND 5
 #define BUFFER_SIZE 256
 
-extern const char *address = "127.0.0.1";
+// Server address (extern declaration — definition TCPClient.c'de)
+extern const char *address;
 
 #include <stdbool.h>
 
@@ -33,8 +34,8 @@ bool send_secure(int network_socket, const char *buffer);
 
 // CRYP2
 void encryped_user_login(int network_socket, struct sockaddr *server_address);
-void secure_user_send_message(int network_socket, struct sockaddr *server_address, char *username);
+void secure_user_send_message(int network_socket,
+                              struct sockaddr *server_address, char *username);
 void *secure_listening_messages_thread(void *arg);
-
 
 #endif
